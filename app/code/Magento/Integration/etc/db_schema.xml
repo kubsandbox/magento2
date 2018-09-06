@@ -6,7 +6,7 @@
  */
 -->
 <schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="urn:magento:setup:Model/Declaration/Schema/etc/schema.xsd">
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
     <table name="oauth_consumer" resource="default" engine="innodb" comment="OAuth Consumers">
         <column xsi:type="int" name="entity_id" padding="10" unsigned="true" nullable="false" identity="true"
                 comment="Entity Id"/>
@@ -88,6 +88,9 @@
             <column name="nonce"/>
             <column name="consumer_id"/>
         </constraint>
+        <index name="OAUTH_NONCE_TIMESTAMP" indexType="btree">
+            <column name="timestamp"/>
+        </index>
     </table>
     <table name="integration" resource="default" engine="innodb" comment="integration">
         <column xsi:type="int" name="integration_id" padding="10" unsigned="true" nullable="false" identity="true"

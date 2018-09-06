@@ -350,10 +350,9 @@ class UserTest extends \PHPUnit\Framework\TestCase
             ->with($password, $this->model->getPassword())
             ->willReturn(true);
         $this->model->setIsActive(false);
-        $this->expectException(
-            \Magento\Framework\Exception\AuthenticationException::class,
-            'You did not sign in correctly or your account is temporarily disabled.'
-        );
+        $this->expectException(\Magento\Framework\Exception\AuthenticationException::class);
+        $this->expectExceptionMessage('The account sign-in was incorrect or your account is disabled temporarily. '
+            . 'Please wait and try again later.');
         $this->model->verifyIdentity($password);
     }
 
@@ -370,10 +369,8 @@ class UserTest extends \PHPUnit\Framework\TestCase
             ->willReturn(true);
         $this->model->setIsActive(true);
         $this->resourceMock->expects($this->once())->method('hasAssigned2Role')->willReturn(false);
-        $this->expectException(
-            \Magento\Framework\Exception\AuthenticationException::class,
-            'You need more permissions to access this.'
-        );
+        $this->expectException(\Magento\Framework\Exception\AuthenticationException::class);
+        $this->expectExceptionMessage('More permissions are needed to access this.');
         $this->model->verifyIdentity($password);
     }
 
@@ -781,16 +778,14 @@ class UserTest extends \PHPUnit\Framework\TestCase
             ->willReturnSelf();
 
         if ($lockExpires) {
-            $this->expectException(
-                \Magento\Framework\Exception\State\UserLockedException::class,
-                __('Your account is temporarily disabled.')
-            );
+            $this->expectException(\Magento\Framework\Exception\State\UserLockedException::class);
+            $this->expectExceptionMessage((string)__('Your account is temporarily disabled. Please try again later.'));
         }
 
-        if (!$verifyIdentityResult) {
-            $this->expectException(
-                \Magento\Framework\Exception\AuthenticationException::class,
-                __('You have entered an invalid password for current user.')
+        if (!$lockExpires && !$verifyIdentityResult) {
+            $this->expectException(\Magento\Framework\Exception\AuthenticationException::class);
+            $this->expectExceptionMessage(
+                (string)__('The password entered for the current user is invalid. Verify the password and try again.')
             );
         }
 

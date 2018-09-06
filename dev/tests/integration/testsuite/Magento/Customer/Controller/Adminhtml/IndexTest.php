@@ -3,6 +3,7 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+
 namespace Magento\Customer\Controller\Adminhtml;
 
 use Magento\Customer\Api\AccountManagementInterface;
@@ -43,6 +44,9 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
     /** @var \Magento\TestFramework\ObjectManager */
     protected $objectManager;
 
+    /**
+     * {@inheritDoc}
+     */
     protected function setUp()
     {
         parent::setUp();
@@ -66,6 +70,9 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
         );
     }
 
+    /**
+     * {@inheritDoc}
+     */
     protected function tearDown()
     {
         /**
@@ -217,8 +224,15 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
         $this->assertNotEquals(0, $this->accountManagement->getDefaultBillingAddress($customerId));
         $this->assertNull($this->accountManagement->getDefaultShippingAddress($customerId));
 
+        $urlPatternParts = [
+            $this->_baseControllerUrl . 'edit',
+            'id/' . $customerId,
+            'back/1',
+        ];
+        $urlPattern = '/^' . str_replace('/', '\/', implode('(/.*/)|/', $urlPatternParts)) . '/';
+
         $this->assertRedirect(
-            $this->stringStartsWith($this->_baseControllerUrl . 'edit/id/' . $customerId . '/back/1')
+            $this->matchesRegularExpression($urlPattern)
         );
 
         /** @var \Magento\Newsletter\Model\Subscriber $subscriber */
@@ -387,13 +401,17 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
         $transportBuilderMock = $this->prepareEmailMock(
             2,
             'change_email_template',
-            'support',
+            [
+                'name' => 'CustomerSupport',
+                'email' => 'support@example.com',
+            ],
             $customerId,
             $newEmail
         );
         $this->addEmailMockToClass($transportBuilderMock, EmailNotification::class);
         $post = [
-            'customer' => ['entity_id' => $customerId,
+            'customer' => [
+                'entity_id' => $customerId,
                 'middlename' => 'test middlename',
                 'group_id' => 1,
                 'website_id' => 1,
@@ -433,7 +451,10 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
         $transportBuilderMock = $this->prepareEmailMock(
             2,
             'change_email_template',
-            'support',
+            [
+                'name' => 'CustomerSupport',
+                'email' => 'support@example.com',
+            ],
             $customerId,
             $newEmail
         );
@@ -484,7 +505,7 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
          * Check that error message is set
          */
         $this->assertSessionMessages(
-            $this->equalTo(['A customer with the same email already exists in an associated website.']),
+            $this->equalTo(['A customer with the same email address already exists in an associated website.']),
             \Magento\Framework\Message\MessageInterface::TYPE_ERROR
         );
         $this->assertEquals(
@@ -507,7 +528,10 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
         $this->assertContains('<h1 class="page-title">test firstname test lastname</h1>', $body);
     }
 
-    public function testNewAction()
+    /**
+     * Tests new action
+     */
+    public function testNewAction(): void
     {
         $this->dispatch('backend/customer/index/edit');
         $body = $this->getResponse()->getBody();
@@ -702,12 +726,9 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
 
         $this->assertContains('{"error":true,"messages":', $body);
         $this->assertContains('\"First Name\" is a required value', $body);
-        $this->assertContains('\"First Name\" length must be equal or greater than 1 characters', $body);
         $this->assertContains('\"Last Name\" is a required value.', $body);
-        $this->assertContains('\"Last Name\" length must be equal or greater than 1 characters.', $body);
         $this->assertContains('\"Country\" is a required value.', $body);
         $this->assertContains('\"Phone Number\" is a required value.', $body);
-        $this->assertContains('\"Phone Number\" length must be equal or greater than 1 characters.', $body);
     }
 
     /**
@@ -746,18 +767,23 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
     }
 
     /**
-     * Prepare email mock to test emails
+     * Prepare email mock to test emails.
      *
      * @param int $occurrenceNumber
      * @param string $templateId
-     * @param string $sender
+     * @param array $sender
      * @param int $customerId
      * @param string|null $newEmail
      * @return \PHPUnit_Framework_MockObject_MockObject
      * @magentoDataFixture Magento/Customer/_files/customer.php
      */
-    protected function prepareEmailMock($occurrenceNumber, $templateId, $sender, $customerId, $newEmail = null)
-    {
+    protected function prepareEmailMock(
+        int $occurrenceNumber,
+        string $templateId,
+        array $sender,
+        int $customerId,
+        $newEmail = null
+    ) : \PHPUnit_Framework_MockObject_MockObject {
         $area = \Magento\Framework\App\Area::AREA_FRONTEND;
         $customer = $this->customerRepository->getById($customerId);
         $storeId = $customer->getStoreId();
@@ -777,7 +803,7 @@ class IndexTest extends \Magento\TestFramework\TestCase\AbstractBackendControlle
                     'setTemplateIdentifier',
                     'setTemplateVars',
                     'setTemplateOptions',
-                    'getTransport'
+                    'getTransport',
                 ]
             )
             ->getMock();

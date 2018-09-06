@@ -3,11 +3,13 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+
 namespace Magento\Framework\Reflection;
 
 use Magento\Framework\Exception\SerializationException;
 use Magento\Framework\Phrase;
 use Zend\Code\Reflection\ClassReflection;
+use Zend\Code\Reflection\DocBlock\Tag\ParamTag;
 use Zend\Code\Reflection\DocBlock\Tag\ReturnTag;
 use Zend\Code\Reflection\DocBlockReflection;
 use Zend\Code\Reflection\MethodReflection;
@@ -99,7 +101,9 @@ class TypeProcessor
     public function getTypeData($typeName)
     {
         if (!isset($this->_types[$typeName])) {
-            throw new \InvalidArgumentException(sprintf('Data type "%s" is not declared.', $typeName));
+            throw new \InvalidArgumentException(
+                sprintf('The "%s" data type isn\'t declared. Verify the type and try again.', $typeName)
+            );
         }
         return $this->_types[$typeName];
     }
@@ -137,7 +141,10 @@ class TypeProcessor
             $typeSimple = $this->getArrayItemType($type);
             if (!(class_exists($typeSimple) || interface_exists($typeSimple))) {
                 throw new \LogicException(
-                    sprintf('Class "%s" does not exist. Please note that namespace must be specified.', $type)
+                    sprintf(
+                        'The "%s" class doesn\'t exist and the namespace must be specified. Verify and try again.',
+                        $type
+                    )
                 );
             }
             $complexTypeName = $this->translateTypeName($type);
@@ -167,7 +174,7 @@ class TypeProcessor
         } else {
             if (!(class_exists($class) || interface_exists($class))) {
                 throw new \InvalidArgumentException(
-                    sprintf('Could not load the "%s" class as parameter type.', $class)
+                    sprintf('The "%s" class couldn\'t load as a parameter type.', $class)
                 );
             }
             $reflection = new ClassReflection($class);
@@ -425,7 +432,9 @@ class TypeProcessor
 
             return ucfirst($moduleNamespace . $moduleName . implode('', $typeNameParts));
         }
-        throw new \InvalidArgumentException(sprintf('Invalid parameter type "%s".', $class));
+        throw new \InvalidArgumentException(
+            sprintf('The "%s" parameter type is invalid. Verify the parameter and try again.', $class)
+        );
     }
 
     /**
@@ -464,7 +473,8 @@ class TypeProcessor
                 if ($value !== null && !settype($value[$key], $arrayItemType)) {
                     throw new SerializationException(
                         new Phrase(
-                            'Invalid type for value: "%value". Expected Type: "%type".',
+                            'The "%value" value\'s type is invalid. The "%type" type was expected. '
+                            . 'Verify and try again.',
                             ['value' => $value, 'type' => $type]
                         )
                     );
@@ -476,7 +486,7 @@ class TypeProcessor
             if ($value !== null && !$this->isTypeAny($type) && !$this->setType($value, $type)) {
                 throw new SerializationException(
                     new Phrase(
-                        'Invalid type for value: "%value". Expected Type: "%type".',
+                        'The "%value" value\'s type is invalid. The "%type" type was expected. Verify and try again.',
                         ['value' => (string)$value, 'type' => $type]
                     )
                 );
@@ -484,7 +494,7 @@ class TypeProcessor
         } elseif (!$this->isTypeAny($type)) {
             throw new SerializationException(
                 new Phrase(
-                    'Invalid type for value: "%value". Expected Type: "%type".',
+                    'The "%value" value\'s type is invalid. The "%type" type was expected. Verify and try again.',
                     ['value' => gettype($value), 'type' => $type]
                 )
             );
@@ -513,35 +523,24 @@ class TypeProcessor
         }
         if ($type == 'array') {
             // try to determine class, if it's array of objects
-            $docBlock = $param->getDeclaringFunction()->getDocBlock();
-            $pattern = "/\@param\s+([\w\\\_]+\[\])\s+\\\${$param->getName()}\n/";
-            $matches = [];
-            if (preg_match($pattern, $docBlock->getContents(), $matches)) {
-                return $matches[1];
-            }
-            return "{$type}[]";
+            $paramDocBlock = $this->getParamDocBlockTag($param);
+            $paramTypes = $paramDocBlock->getTypes();
+            $paramType = array_shift($paramTypes);
+            return strpos($paramType, '[]') !== false ? $paramType : "{$paramType}[]";
         }
         return $type;
     }
 
     /**
-     * Get parameter description
+     * Gets method parameter description.
      *
      * @param ParameterReflection $param
      * @return string|null
      */
     public function getParamDescription(ParameterReflection $param)
     {
-        $docBlock = $param->getDeclaringFunction()->getDocBlock();
-        $docBlockLines = explode("\n", $docBlock->getContents());
-        $pattern = "/\@param\s+([\w\\\_\[\]\|]+)\s+(\\\${$param->getName()})\s(.*)/";
-        $matches = [];
-
-        foreach ($docBlockLines as $line) {
-            if (preg_match($pattern, $line, $matches)) {
-                return $matches[3];
-            }
-        }
+        $paramDocBlock = $this->getParamDocBlockTag($param);
+        return $paramDocBlock->getDescription();
     }
 
     /**
@@ -722,7 +721,7 @@ class TypeProcessor
             // throw an exception if even implemented interface doesn't have return annotations
             if (empty($returnAnnotations)) {
                 throw new \InvalidArgumentException(
-                    "Getter return type must be specified using @return annotation. "
+                    "Method's return type must be specified using @return annotation. "
                     . "See {$methodReflection->getDeclaringClass()->getName()}::{$methodName}()"
                 );
             }
@@ -741,10 +740,24 @@ class TypeProcessor
         $methodDocBlock = $methodReflection->getDocBlock();
         if (!$methodDocBlock) {
             throw new \InvalidArgumentException(
-                "Each getter must have a doc block. "
+                "Each method must have a doc block. "
                 . "See {$methodReflection->getDeclaringClass()->getName()}::{$methodReflection->getName()}()"
             );
         }
         return current($methodDocBlock->getTags('return'));
+    }
+
+    /**
+     * Gets method's param doc block.
+     *
+     * @param ParameterReflection $param
+     * @return ParamTag
+     */
+    private function getParamDocBlockTag(ParameterReflection $param): ParamTag
+    {
+        $docBlock = $param->getDeclaringFunction()
+            ->getDocBlock();
+        $paramsTag = $docBlock->getTags('param');
+        return $paramsTag[$param->getPosition()];
     }
 }

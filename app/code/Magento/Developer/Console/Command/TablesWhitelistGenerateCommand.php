@@ -8,8 +8,9 @@ namespace Magento\Developer\Console\Command;
 use Magento\Framework\Component\ComponentRegistrar;
 use Magento\Framework\Config\FileResolverByModule;
 use Magento\Framework\Module\Dir;
+use Magento\Framework\Setup\Declaration\Schema\Diff\Diff;
 use Magento\Framework\Setup\JsonPersistor;
-use Magento\Setup\Model\Declaration\Schema\Declaration\ReaderComposite;
+use Magento\Framework\Setup\Declaration\Schema\Declaration\ReaderComposite;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -21,11 +22,6 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 class TablesWhitelistGenerateCommand extends Command
 {
-    /**
-     * Whitelist file name.
-     */
-    const GENERATED_FILE_NAME = 'db_schema_whitelist.json';
-
     /**
      * Module name key, that will be used in whitelist generate command.
      */
@@ -47,10 +43,15 @@ class TablesWhitelistGenerateCommand extends Command
     private $jsonPersistor;
 
     /**
+     * @var array
+     */
+    private $primaryDbSchema;
+
+    /**
      * @param ComponentRegistrar $componentRegistrar
      * @param ReaderComposite $readerComposite
      * @param JsonPersistor $jsonPersistor
-     * @param null $name
+     * @param string|null $name
      */
     public function __construct(
         ComponentRegistrar $componentRegistrar,
@@ -103,23 +104,26 @@ class TablesWhitelistGenerateCommand extends Command
             . DIRECTORY_SEPARATOR
             . Dir::MODULE_ETC_DIR
             . DIRECTORY_SEPARATOR
-            . self::GENERATED_FILE_NAME;
+            . Diff::GENERATED_WHITELIST_FILE_NAME;
         //We need to load whitelist file and update it with new revision of code.
         if (file_exists($whiteListFileName)) {
             $content = json_decode(file_get_contents($whiteListFileName), true);
         }
-        $newContent = $this->readerComposite->read($moduleName);
 
-        //Do merge between what we have before, and what we have now.
+        $newContent = $this->filterPrimaryTables($this->readerComposite->read($moduleName));
+
+        //Do merge between what we have before, and what we have now and filter to only certain attributes.
         $content = array_replace_recursive(
             $content,
-            $this->selectNamesFromContent($newContent)
+            $this->filterAttributeNames($newContent)
         );
-        $this->jsonPersistor->persist($content, $whiteListFileName);
+        if (!empty($content)) {
+            $this->jsonPersistor->persist($content, $whiteListFileName);
+        }
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
@@ -148,7 +152,7 @@ class TablesWhitelistGenerateCommand extends Command
      * @param array $content
      * @return array
      */
-    private function selectNamesFromContent(array $content)
+    private function filterAttributeNames(array $content)
     {
         $names = [];
         $types = ['column', 'index', 'constraint'];
@@ -166,5 +170,36 @@ class TablesWhitelistGenerateCommand extends Command
         }
 
         return $names;
+    }
+
+    /**
+     * Load db_schema content from the primary scope app/etc/db_schema.xml.
+     *
+     * @return array
+     */
+    private function getPrimaryDbSchema()
+    {
+        if (!$this->primaryDbSchema) {
+            $this->primaryDbSchema = $this->readerComposite->read('primary');
+        }
+        return $this->primaryDbSchema;
+    }
+
+    /**
+     * Filter tables from module db_schema.xml as they should not contain the primary system tables.
+     *
+     * @param array $moduleDbSchema
+     * @return array
+     * @SuppressWarnings(PHPMD.UnusedLocalVariable)
+     */
+    private function filterPrimaryTables(array $moduleDbSchema)
+    {
+        $primaryDbSchema = $this->getPrimaryDbSchema();
+        if (isset($moduleDbSchema['table']) && isset($primaryDbSchema['table'])) {
+            foreach ($primaryDbSchema['table'] as $tableNameKey => $tableContents) {
+                unset($moduleDbSchema['table'][$tableNameKey]);
+            }
+        }
+        return $moduleDbSchema;
     }
 }

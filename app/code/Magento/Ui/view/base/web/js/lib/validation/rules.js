@@ -11,10 +11,11 @@ define([
     'underscore',
     './utils',
     'moment',
+    'tinycolor',
     'jquery/validate',
     'jquery/ui',
     'mage/translate'
-], function ($, _, utils, moment) {
+], function ($, _, utils, moment, tinycolor) {
     'use strict';
 
     /**
@@ -220,7 +221,7 @@ define([
         ],
         'time12h': [
             function (value) {
-                return /^((0?[1-9]|1[012])(:[0-5]\d){0,2}(\ [AP]M))$/i.test(value);
+                return /^((0?[1-9]|1[012])(:[0-5]\d){0,2}(\s[AP]M))$/i.test(value);
             },
             $.mage.__('Please enter a valid time, between 00:00 am and 12:00 pm')
         ],
@@ -635,7 +636,7 @@ define([
         'validate-number': [
             function (value) {
                 return utils.isEmptyNoTrim(value) ||
-                    !isNaN(utils.parseNumber(value)) && /^\s*-?\d*(\.\d*)?\s*$/.test(value);
+                    !isNaN(utils.parseNumber(value)) && /^\s*-?\d*(,\d*)*(\.\d*)?\s*$/.test(value);
             },
             $.mage.__('Please enter a valid number in this field.')
         ],
@@ -753,6 +754,12 @@ define([
                 return utils.isEmptyNoTrim(value) || /^[a-zA-Z0-9]+$/.test(value);
             },
             $.mage.__('Please use only letters (a-z or A-Z) or numbers (0-9) in this field. No spaces or other characters are allowed.')//eslint-disable-line max-len
+        ],
+        'validate-not-number-first': [
+            function (value) {
+                return utils.isEmptyNoTrim(value) || /^[^0-9-\.].*$/.test(value.trim());
+            },
+            $.mage.__('First character must be letter.')
         ],
         'validate-date': [
             function (value, params, additionalParams) {
@@ -909,8 +916,10 @@ define([
         ],
         'validate-item-quantity': [
             function (value, params) {
-                // obtain values for validation
-                var qty = utils.parseNumber(value),
+                var validator = this,
+                    result = false,
+                    // obtain values for validation
+                    qty = utils.parseNumber(value),
                     isMinAllowedValid = typeof params.minAllowed === 'undefined' ||
                         qty >= utils.parseNumber(params.minAllowed),
                     isMaxAllowedValid = typeof params.maxAllowed === 'undefined' ||
@@ -918,9 +927,42 @@ define([
                     isQtyIncrementsValid = typeof params.qtyIncrements === 'undefined' ||
                         qty % utils.parseNumber(params.qtyIncrements) === 0;
 
-                return isMaxAllowedValid && isMinAllowedValid && isQtyIncrementsValid && qty > 0;
-            },
-            ''
+                result = qty > 0;
+
+                if (result === false) {
+                    validator.itemQtyErrorMessage = $.mage.__('Please enter a quantity greater than 0.');//eslint-disable-line max-len
+
+                    return result;
+                }
+
+                result = isMinAllowedValid;
+
+                if (result === false) {
+                    validator.itemQtyErrorMessage = $.mage.__('The fewest you may purchase is %1.').replace('%1', params.minAllowed);//eslint-disable-line max-len
+
+                    return result;
+                }
+
+                result = isMaxAllowedValid;
+
+                if (result === false) {
+                    validator.itemQtyErrorMessage = $.mage.__('The maximum you may purchase is %1.').replace('%1', params.maxAllowed);//eslint-disable-line max-len
+
+                    return result;
+                }
+
+                result = isQtyIncrementsValid;
+
+                if (result === false) {
+                    validator.itemQtyErrorMessage = $.mage.__('You can buy this product only in quantities of %1 at a time.').replace('%1', params.qtyIncrements);//eslint-disable-line max-len
+
+                    return result;
+                }
+
+                return result;
+            }, function () {
+                return this.itemQtyErrorMessage;
+            }
         ],
         'equalTo': [
             function (value, param) {
@@ -963,6 +1005,22 @@ define([
                 return moment.utc(value, params.dateFormat).unix() <= maxValue;
             },
             $.mage.__('The date is not within the specified range.')
+        ],
+        'validate-color': [
+            function (value) {
+                if (value === '') {
+                    return true;
+                }
+
+                return tinycolor(value).isValid();
+            },
+            $.mage.__('Wrong color format. Please specify color in HEX, RGBa, HSVa, HSLa or use color name.')
+        ],
+        'blacklist-url': [
+            function (value, param) {
+                return new RegExp(param).test(value);
+            },
+            $.mage.__('This link is not allowed.')
         ]
     }, function (data) {
         return {

@@ -14,6 +14,7 @@ use Magento\Quote\Api\Data\PaymentInterface;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Quote\Model\Quote\Address\Total as AddressTotal;
 use Magento\Sales\Model\Status;
+use Magento\Framework\App\ObjectManager;
 
 /**
  * Quote model
@@ -354,6 +355,11 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     protected $shippingAddressesItems;
 
     /**
+     * @var \Magento\Sales\Model\OrderIncrementIdChecker
+     */
+    private $orderIncrementIdChecker;
+
+    /**
      * @param \Magento\Framework\Model\Context $context
      * @param \Magento\Framework\Registry $registry
      * @param \Magento\Framework\Api\ExtensionAttributesFactory $extensionFactory
@@ -394,6 +400,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
      * @param \Magento\Framework\Model\ResourceModel\AbstractResource|null $resource
      * @param \Magento\Framework\Data\Collection\AbstractDb|null $resourceCollection
      * @param array $data
+     * @param \Magento\Sales\Model\OrderIncrementIdChecker|null $orderIncrementIdChecker
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
@@ -436,7 +443,8 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
         \Magento\Quote\Model\ShippingAssignmentFactory $shippingAssignmentFactory,
         \Magento\Framework\Model\ResourceModel\AbstractResource $resource = null,
         \Magento\Framework\Data\Collection\AbstractDb $resourceCollection = null,
-        array $data = []
+        array $data = [],
+        \Magento\Sales\Model\OrderIncrementIdChecker $orderIncrementIdChecker = null
     ) {
         $this->quoteValidator = $quoteValidator;
         $this->_catalogProduct = $catalogProduct;
@@ -471,6 +479,8 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
         $this->totalsReader = $totalsReader;
         $this->shippingFactory = $shippingFactory;
         $this->shippingAssignmentFactory = $shippingAssignmentFactory;
+        $this->orderIncrementIdChecker = $orderIncrementIdChecker ?: ObjectManager::getInstance()
+            ->get(\Magento\Sales\Model\OrderIncrementIdChecker::class);
         parent::__construct(
             $context,
             $registry,
@@ -516,7 +526,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setCurrency(\Magento\Quote\Api\Data\CurrencyInterface $currency = null)
     {
@@ -524,7 +534,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getItems()
     {
@@ -532,7 +542,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setItems(array $items = null)
     {
@@ -540,7 +550,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getCreatedAt()
     {
@@ -548,7 +558,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setCreatedAt($createdAt)
     {
@@ -556,7 +566,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getUpdatedAt()
     {
@@ -564,7 +574,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setUpdatedAt($updatedAt)
     {
@@ -572,7 +582,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getConvertedAt()
     {
@@ -580,7 +590,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setConvertedAt($convertedAt)
     {
@@ -588,7 +598,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getIsActive()
     {
@@ -596,7 +606,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setIsActive($isActive)
     {
@@ -604,7 +614,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setIsVirtual($isVirtual)
     {
@@ -612,7 +622,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getItemsCount()
     {
@@ -620,7 +630,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setItemsCount($itemsCount)
     {
@@ -628,7 +638,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getItemsQty()
     {
@@ -636,7 +646,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setItemsQty($itemsQty)
     {
@@ -644,7 +654,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getOrigOrderId()
     {
@@ -652,7 +662,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setOrigOrderId($origOrderId)
     {
@@ -660,7 +670,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getReservedOrderId()
     {
@@ -668,7 +678,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setReservedOrderId($reservedOrderId)
     {
@@ -676,7 +686,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getCustomerIsGuest()
     {
@@ -684,7 +694,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setCustomerIsGuest($customerIsGuest)
     {
@@ -692,7 +702,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getCustomerNote()
     {
@@ -700,7 +710,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setCustomerNote($customerNote)
     {
@@ -708,7 +718,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getCustomerNoteNotify()
     {
@@ -716,7 +726,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setCustomerNoteNotify($customerNoteNotify)
     {
@@ -726,7 +736,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     //@codeCoverageIgnoreEnd
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getStoreId()
     {
@@ -737,7 +747,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setStoreId($storeId)
     {
@@ -1068,7 +1078,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getCustomerTaxClassId()
     {
@@ -1087,7 +1097,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function setCustomerTaxClassId($customerTaxClassId)
     {
@@ -1389,7 +1399,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     {
         $items = [];
         foreach ($this->getItemsCollection() as $item) {
-            if (!$item->isDeleted() && !$item->getParentItemId()) {
+            if (!$item->isDeleted() && !$item->getParentItemId() && !$item->getParentItem()) {
                 $items[] = $item;
             }
         }
@@ -1598,7 +1608,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
          * Error message
          */
         if (is_string($cartCandidates) || $cartCandidates instanceof \Magento\Framework\Phrase) {
-            return strval($cartCandidates);
+            return (string)$cartCandidates;
         }
 
         /**
@@ -2011,7 +2021,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
         foreach ($this->getMessages() as $message) {
             /* @var $error \Magento\Framework\Message\AbstractMessage */
             if ($message->getType() == \Magento\Framework\Message\MessageInterface::TYPE_ERROR) {
-                array_push($errors, $message);
+                $errors[] = $message;
             }
         }
         return $errors;
@@ -2184,7 +2194,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
         } else {
             //checking if reserved order id was already used for some order
             //if yes reserving new one if not using old one
-            if ($this->_getResource()->isOrderIncrementIdUsed($this->getReservedOrderId())) {
+            if ($this->orderIncrementIdChecker->isIncrementIdUsed($this->getReservedOrderId())) {
                 $this->setReservedOrderId($this->_getResource()->getReservedOrderId($this));
             }
         }
@@ -2331,6 +2341,7 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
             foreach ($this->getAllItems() as $quoteItem) {
                 if ($quoteItem->compare($item)) {
                     $quoteItem->setQty($quoteItem->getQty() + $item->getQty());
+                    $this->itemProcessor->merge($item, $quoteItem);
                     $found = true;
                     break;
                 }
@@ -2378,8 +2389,9 @@ class Quote extends AbstractExtensibleModel implements \Magento\Quote\Api\Data\C
     {
         // collect totals and save me, if required
         if (1 == $this->getTriggerRecollect()) {
-            $this->collectTotals()->save();
-            $this->setTriggerRecollect(0);
+            $this->collectTotals()
+                ->setTriggerRecollect(0)
+                ->save();
         }
         return parent::_afterLoad();
     }

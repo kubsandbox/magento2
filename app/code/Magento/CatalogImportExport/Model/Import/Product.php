@@ -10,10 +10,13 @@ use Magento\Catalog\Model\Product\Visibility;
 use Magento\CatalogImportExport\Model\Import\Product\MediaGalleryProcessor;
 use Magento\CatalogImportExport\Model\Import\Product\ImageTypeProcessor;
 use Magento\CatalogImportExport\Model\Import\Product\RowValidatorInterface as ValidatorInterface;
+use Magento\CatalogInventory\Api\Data\StockItemInterface;
+use Magento\CatalogImportExport\Model\StockItemImporterInterface;
 use Magento\Framework\App\Filesystem\DirectoryList;
 use Magento\Framework\App\ObjectManager;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Filesystem;
+use Magento\Framework\Intl\DateTimeFactory;
 use Magento\Framework\Model\ResourceModel\Db\ObjectRelationProcessor;
 use Magento\Framework\Model\ResourceModel\Db\TransactionManagerInterface;
 use Magento\Framework\Stdlib\DateTime;
@@ -291,7 +294,8 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
         ValidatorInterface::ERROR_MEDIA_PATH_NOT_ACCESSIBLE => 'Imported resource (image) does not exist in the local media storage',
         ValidatorInterface::ERROR_MEDIA_URL_NOT_ACCESSIBLE => 'Imported resource (image) could not be downloaded from external resource due to timeout or access permissions',
         ValidatorInterface::ERROR_INVALID_WEIGHT => 'Product weight is invalid',
-        ValidatorInterface::ERROR_DUPLICATE_URL_KEY => 'Url key: \'%s\' was already generated for an item with the SKU: \'%s\'. You need to specify the unique URL key manually'
+        ValidatorInterface::ERROR_DUPLICATE_URL_KEY => 'Url key: \'%s\' was already generated for an item with the SKU: \'%s\'. You need to specify the unique URL key manually',
+        ValidatorInterface::ERROR_DUPLICATE_MULTISELECT_VALUES => "Value for multiselect attribute %s contains duplicated values",
     ];
     //@codingStandardsIgnoreEnd
 
@@ -535,6 +539,7 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
 
     /**
      * @var \Magento\CatalogInventory\Model\ResourceModel\Stock\ItemFactory
+     * @deprecated this variable isn't used anymore.
      */
     protected $_stockResItemFac;
 
@@ -704,6 +709,13 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
     private $catalogConfig;
 
     /**
+     * Stock Item Importer
+     *
+     * @var StockItemImporterInterface
+     */
+    private $stockItemImporter;
+
+    /**
      * @var ImageTypeProcessor
      */
     private $imageTypeProcessor;
@@ -714,6 +726,11 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
      * @var MediaGalleryProcessor
      */
     private $mediaProcessor;
+
+    /**
+     * @var DateTimeFactory
+     */
+    private $dateTimeFactory;
 
     /**
      * @param \Magento\Framework\Json\Helper\Data $jsonHelper
@@ -751,13 +768,14 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
      * @param TransactionManagerInterface $transactionManager
      * @param Product\TaxClassProcessor $taxClassProcessor
      * @param \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig
+     * @param \Magento\Catalog\Model\Product\Url $productUrl
      * @param array $data
      * @param array $dateAttrCodes
      * @param CatalogConfig $catalogConfig
      * @param ImageTypeProcessor $imageTypeProcessor
      * @param MediaGalleryProcessor $mediaProcessor
-     * @throws \Magento\Framework\Exception\LocalizedException
-     *
+     * @param StockItemImporterInterface|null $stockItemImporter
+     * @param DateTimeFactory $dateTimeFactory
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
@@ -801,7 +819,9 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
         array $dateAttrCodes = [],
         CatalogConfig $catalogConfig = null,
         ImageTypeProcessor $imageTypeProcessor = null,
-        MediaGalleryProcessor $mediaProcessor = null
+        MediaGalleryProcessor $mediaProcessor = null,
+        StockItemImporterInterface $stockItemImporter = null,
+        DateTimeFactory $dateTimeFactory = null
     ) {
         $this->_eventManager = $eventManager;
         $this->stockRegistry = $stockRegistry;
@@ -835,7 +855,8 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
         $this->catalogConfig = $catalogConfig ?: ObjectManager::getInstance()->get(CatalogConfig::class);
         $this->imageTypeProcessor = $imageTypeProcessor ?: ObjectManager::getInstance()->get(ImageTypeProcessor::class);
         $this->mediaProcessor = $mediaProcessor ?: ObjectManager::getInstance()->get(MediaGalleryProcessor::class);
-
+        $this->stockItemImporter = $stockItemImporter ?: ObjectManager::getInstance()
+            ->get(StockItemImporterInterface::class);
         parent::__construct(
             $jsonHelper,
             $importExportData,
@@ -846,17 +867,14 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
             $string,
             $errorAggregator
         );
-        $this->_optionEntity = isset(
-            $data['option_entity']
-        ) ? $data['option_entity'] : $optionFactory->create(
-            ['data' => ['product_entity' => $this]]
-        );
-
+        $this->_optionEntity = $data['option_entity'] ??
+            $optionFactory->create(['data' => ['product_entity' => $this]]);
         $this->_initAttributeSets()
             ->_initTypeModels()
             ->_initSkus()
             ->initImagesArrayKeys();
         $this->validator->init($this);
+        $this->dateTimeFactory = $dateTimeFactory ?? ObjectManager::getInstance()->get(DateTimeFactory::class);
     }
 
     /**
@@ -890,6 +908,19 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
             return $this->_parameters[Import::FIELD_FIELD_MULTIPLE_VALUE_SEPARATOR];
         }
         return Import::DEFAULT_GLOBAL_MULTI_VALUE_SEPARATOR;
+    }
+
+    /**
+     * Return empty attribute value constant
+     *
+     * @return string
+     */
+    public function getEmptyAttributeValueConstant()
+    {
+        if (!empty($this->_parameters[Import::FIELD_EMPTY_ATTRIBUTE_VALUE_CONSTANT])) {
+            return $this->_parameters[Import::FIELD_EMPTY_ATTRIBUTE_VALUE_CONSTANT];
+        }
+        return Import::DEFAULT_EMPTY_ATTRIBUTE_VALUE_CONSTANT;
     }
 
     /**
@@ -1692,7 +1723,7 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
                 $storeId = !empty($rowData[self::COL_STORE])
                     ? $this->getStoreIdByCode($rowData[self::COL_STORE])
                     : Store::DEFAULT_STORE_ID;
-                if (isset($rowData['_media_is_disabled'])) {
+                if (isset($rowData['_media_is_disabled']) && strlen(trim($rowData['_media_is_disabled']))) {
                     $disabledImages = array_flip(
                         explode($this->getMultipleValueSeparator(), $rowData['_media_is_disabled'])
                     );
@@ -1712,7 +1743,7 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
                 foreach ($rowImages as $column => $columnImages) {
                     foreach ($columnImages as $columnImageKey => $columnImage) {
                         if (!isset($uploadedImages[$columnImage])) {
-                            $uploadedFile = $this->uploadMediaFiles($columnImage, true);
+                            $uploadedFile = $this->uploadMediaFiles($columnImage);
                             $uploadedFile = $uploadedFile ?: $this->getSystemFile($columnImage);
                             if ($uploadedFile) {
                                 $uploadedImages[$columnImage] = $uploadedFile;
@@ -2128,9 +2159,6 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
      */
     protected function _saveStockItem()
     {
-        /** @var $stockResource \Magento\CatalogInventory\Model\ResourceModel\Stock\Item */
-        $stockResource = $this->_stockResItemFac->create();
-        $entityTable = $stockResource->getMainTable();
         while ($bunch = $this->_dataSourceModel->getNextBunch()) {
             $stockData = [];
             $productIdsToReindex = [];
@@ -2143,39 +2171,8 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
                 $row = [];
                 $sku = $rowData[self::COL_SKU];
                 if ($this->skuProcessor->getNewSku($sku) !== null) {
-                    $row['product_id'] = $this->skuProcessor->getNewSku($sku)['entity_id'];
+                    $row = $this->formatStockDataForRow($rowData);
                     $productIdsToReindex[] = $row['product_id'];
-
-                    $row['website_id'] = $this->stockConfiguration->getDefaultScopeId();
-                    $row['stock_id'] = $this->stockRegistry->getStock($row['website_id'])->getStockId();
-
-                    $stockItemDo = $this->stockRegistry->getStockItem($row['product_id'], $row['website_id']);
-                    $existStockData = $stockItemDo->getData();
-
-                    $row = array_merge(
-                        $this->defaultStockData,
-                        array_intersect_key($existStockData, $this->defaultStockData),
-                        array_intersect_key($rowData, $this->defaultStockData),
-                        $row
-                    );
-
-                    if ($this->stockConfiguration->isQty(
-                        $this->skuProcessor->getNewSku($sku)['type_id']
-                    )
-                    ) {
-                        $stockItemDo->setData($row);
-                        $row['is_in_stock'] = $this->stockStateProvider->verifyStock($stockItemDo);
-                        if ($this->stockStateProvider->verifyNotification($stockItemDo)) {
-                            $row['low_stock_date'] = gmdate(
-                                'Y-m-d H:i:s',
-                                (new \DateTime())->getTimestamp()
-                            );
-                        }
-                        $row['stock_status_changed_auto'] =
-                            (int)!$this->stockStateProvider->verifyStock($stockItemDo);
-                    } else {
-                        $row['qty'] = 0;
-                    }
                 }
 
                 if (!isset($stockData[$sku])) {
@@ -2185,7 +2182,7 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
 
             // Insert rows
             if (!empty($stockData)) {
-                $this->_connection->insertOnDuplicate($entityTable, array_values($stockData));
+                $this->stockItemImporter->import($stockData);
             }
 
             $this->reindexProducts($productIdsToReindex);
@@ -2636,7 +2633,10 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
     {
         $useConfigFields = [];
         foreach ($rowData as $key => $value) {
-            $useConfigName = self::INVENTORY_USE_CONFIG_PREFIX . $key;
+            $useConfigName = $key === StockItemInterface::ENABLE_QTY_INCREMENTS
+                ? StockItemInterface::USE_CONFIG_ENABLE_QTY_INC
+                : self::INVENTORY_USE_CONFIG_PREFIX . $key;
+
             if (isset($this->defaultStockData[$key])
                 && isset($this->defaultStockData[$useConfigName])
                 && !empty($value)
@@ -2733,7 +2733,12 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
             );
             foreach ($urlKeyDuplicates as $entityData) {
                 $rowNum = $this->rowNumbers[$entityData['store_id']][$entityData['request_path']];
-                $this->addRowError(ValidatorInterface::ERROR_DUPLICATE_URL_KEY, $rowNum);
+                $message = sprintf(
+                    $this->retrieveMessageTemplate(ValidatorInterface::ERROR_DUPLICATE_URL_KEY),
+                    $entityData['request_path'],
+                    $entityData['sku']
+                );
+                $this->addRowError(ValidatorInterface::ERROR_DUPLICATE_URL_KEY, $rowNum, 'url_key', $message);
             }
         }
     }
@@ -2865,5 +2870,45 @@ class Product extends \Magento\ImportExport\Model\Import\Entity\AbstractEntity
     private function getExistingSku($sku)
     {
         return $this->_oldSku[strtolower($sku)];
+    }
+
+    /**
+     * Format row data to DB compatible values.
+     *
+     * @param array $rowData
+     * @return array
+     */
+    private function formatStockDataForRow(array $rowData): array
+    {
+        $sku = $rowData[self::COL_SKU];
+        $row['product_id'] = $this->skuProcessor->getNewSku($sku)['entity_id'];
+        $row['website_id'] = $this->stockConfiguration->getDefaultScopeId();
+        $row['stock_id'] = $this->stockRegistry->getStock($row['website_id'])->getStockId();
+
+        $stockItemDo = $this->stockRegistry->getStockItem($row['product_id'], $row['website_id']);
+        $existStockData = $stockItemDo->getData();
+
+        $row = array_merge(
+            $this->defaultStockData,
+            array_intersect_key($existStockData, $this->defaultStockData),
+            array_intersect_key($rowData, $this->defaultStockData),
+            $row
+        );
+
+        if ($this->stockConfiguration->isQty($this->skuProcessor->getNewSku($sku)['type_id'])) {
+            $stockItemDo->setData($row);
+            $row['is_in_stock'] = isset($row['is_in_stock']) && $stockItemDo->getBackorders()
+                ? $row['is_in_stock']
+                : $this->stockStateProvider->verifyStock($stockItemDo);
+            if ($this->stockStateProvider->verifyNotification($stockItemDo)) {
+                $date = $this->dateTimeFactory->create('now', new \DateTimeZone('UTC'));
+                $row['low_stock_date'] = $date->format(DateTime::DATETIME_PHP_FORMAT);
+            }
+            $row['stock_status_changed_auto'] = (int)!$this->stockStateProvider->verifyStock($stockItemDo);
+        } else {
+            $row['qty'] = 0;
+        }
+
+        return $row;
     }
 }

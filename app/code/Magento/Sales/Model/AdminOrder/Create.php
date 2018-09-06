@@ -14,6 +14,7 @@ use Magento\Quote\Model\Quote\Address;
 use Magento\Quote\Model\Quote\Item;
 use Magento\Sales\Api\Data\OrderAddressInterface;
 use Magento\Sales\Model\Order;
+use Psr\Log\LoggerInterface;
 
 /**
  * Order create model
@@ -713,9 +714,10 @@ class Create extends \Magento\Framework\DataObject implements \Magento\Checkout\
         $this->_cart = $this->quoteFactory->create();
 
         $customerId = (int)$this->getSession()->getCustomerId();
+        $storeId = (int)$this->getSession()->getStoreId();
         if ($customerId) {
             try {
-                $this->_cart = $this->quoteRepository->getForCustomer($customerId);
+                $this->_cart = $this->quoteRepository->getForCustomer($customerId, [$storeId]);
             } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
                 $this->_cart->setStore($this->getSession()->getStore());
                 $customerData = $this->customerRepository->getById($customerId);
@@ -1073,7 +1075,7 @@ class Create extends \Magento\Framework\DataObject implements \Magento\Checkout\
             try {
                 $this->addProduct($productId, $config);
             } catch (\Magento\Framework\Exception\LocalizedException $e) {
-                $this->messageManager->addError($e->getMessage());
+                $this->messageManager->addErrorMessage($e->getMessage());
             } catch (\Exception $e) {
                 return $e;
             }
@@ -1954,21 +1956,17 @@ class Create extends \Magento\Framework\DataObject implements \Magento\Checkout\
      */
     protected function _validate()
     {
-        $customerId = $this->getSession()->getCustomerId();
-        if ($customerId === null) {
-            throw new \Magento\Framework\Exception\LocalizedException(__('Please select a customer'));
-        }
-
         if (!$this->getSession()->getStore()->getId()) {
             throw new \Magento\Framework\Exception\LocalizedException(__('Please select a store'));
         }
         $items = $this->getQuote()->getAllItems();
 
-        if (count($items) == 0) {
+        if (count($items) === 0) {
             $this->_errors[] = __('Please specify order items.');
         }
 
         foreach ($items as $item) {
+            /** @var \Magento\Quote\Model\Quote\Item $item */
             $messages = $item->getMessage(false);
             if ($item->getHasError() && is_array($messages) && !empty($messages)) {
                 $this->_errors = array_merge($this->_errors, $messages);
@@ -1977,12 +1975,12 @@ class Create extends \Magento\Framework\DataObject implements \Magento\Checkout\
 
         if (!$this->getQuote()->isVirtual()) {
             if (!$this->getQuote()->getShippingAddress()->getShippingMethod()) {
-                $this->_errors[] = __('Please specify a shipping method.');
+                $this->_errors[] = __('The shipping method is missing. Select the shipping method and try again.');
             }
         }
 
         if (!$this->getQuote()->getPayment()->getMethod()) {
-            $this->_errors[] = __('Please specify a payment method.');
+            $this->_errors[] = __("The payment method isn't selected. Enter the payment method and try again.");
         } else {
             $method = $this->getQuote()->getPayment()->getMethodInstance();
             if (!$method->isAvailable($this->getQuote())) {
@@ -1996,9 +1994,13 @@ class Create extends \Magento\Framework\DataObject implements \Magento\Checkout\
             }
         }
         if (!empty($this->_errors)) {
+            /** @var LoggerInterface $logger */
+            $logger = ObjectManager::getInstance()->get(LoggerInterface::class);
             foreach ($this->_errors as $error) {
-                $this->messageManager->addError($error);
+                $logger->error($error);
+                $this->messageManager->addErrorMessage($error);
             }
+
             throw new \Magento\Framework\Exception\LocalizedException(__('Validation is failed.'));
         }
 
@@ -2006,26 +2008,13 @@ class Create extends \Magento\Framework\DataObject implements \Magento\Checkout\
     }
 
     /**
-     * Retrieve or generate new customer email.
+     * Retrieve new customer email.
      *
      * @return string
      */
     protected function _getNewCustomerEmail()
     {
-        $email = $this->getData('account/email');
-        if (empty($email)) {
-            $host = $this->_scopeConfig->getValue(
-                self::XML_PATH_DEFAULT_EMAIL_DOMAIN,
-                \Magento\Store\Model\ScopeInterface::SCOPE_STORE
-            );
-            $account = time();
-            $email = $account . '@' . $host;
-            $account = $this->getData('account');
-            $account['email'] = $email;
-            $this->setData('account', $account);
-        }
-
-        return $email;
+        return $this->getData('account/email');
     }
 
     /**
